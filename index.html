@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ujian CBT Sederhana</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; }
+        input[type="text"], input[type="password"], textarea, button { width: 100%; padding: 10px; margin: 8px 0; display: inline-block; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #5cb85c; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #4cae4c; }
+        .tab-content { border: 1px solid #ddd; padding: 15px; border-radius: 4px; margin-top: 10px; }
+        .tab-header { display: flex; justify-content: space-around; margin-bottom: 10px; }
+        .tab-header button { width: 48%; background-color: #ddd; color: #333; }
+        .tab-header button.active { background-color: #5cb85c; color: white; }
+        .voucher-list { margin-top: 15px; border: 1px solid #eee; padding: 10px; max-height: 150px; overflow-y: auto; }
+        .voucher-item { padding: 5px 0; border-bottom: 1px dashed #eee; display: flex; justify-content: space-between; align-items: center; }
+        .voucher-item:last-child { border-bottom: none; }
+        .delete-btn { background-color: #d9534f; padding: 5px 10px; font-size: 0.8em; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🚪 Ujian CBT Login</h2>
+
+    <div class="tab-header">
+        <button id="showUserTab" class="active">Peserta</button>
+        <button id="showAdminTab">Admin</button>
+    </div>
+
+    <div id="userTab" class="tab-content">
+        <h3>Login Peserta</h3>
+        <input type="email" id="userEmail" placeholder="Masukkan Email Anda" required>
+        <input type="text" id="userVoucher" placeholder="Masukkan Kode Voucher" required>
+        <button onclick="startExam()">Mulai Ujian</button>
+        <p id="userMessage" style="color: red; text-align: center; margin-top: 10px;"></p>
+    </div>
+
+    <div id="adminTab" class="tab-content" style="display: none;">
+        <h3>Login Admin</h3>
+        <input type="password" id="adminPassword" placeholder="Password Admin" required>
+        <button onclick="adminLogin()">Login</button>
+        <p id="adminMessage" style="color: red; text-align: center; margin-top: 10px;"></p>
+
+        <div id="adminMenu" style="display: none; margin-top: 20px;">
+            <h4>⚙️ Pengaturan Ujian</h4>
+            <input type="text" id="examLink" placeholder="Link Ujian (e.g., https://forms.gle/...)">
+            <button onclick="saveExamLink()">Simpan Link Ujian</button>
+            <p style="margin-top: 10px;">Link Ujian saat ini: <strong id="currentExamLink"></strong></p>
+            <hr>
+
+            <h4>🎫 Manajemen Voucher</h4>
+            <input type="number" id="voucherCount" placeholder="Jumlah Voucher yang Akan Dibuat (min 1)" min="1">
+            <button onclick="generateVouchers()">Generate Voucher</button>
+            <textarea id="generatedVouchers" placeholder="Voucher yang baru dibuat akan muncul di sini..." rows="3" readonly style="margin-top: 10px;"></textarea>
+            
+            <h4 style="margin-top: 15px;">Daftar Voucher Tersedia</h4>
+            <div id="voucherListContainer" class="voucher-list">
+                </div>
+            <button onclick="clearAllVouchers()" style="background-color: #d9534f; margin-top: 10px;">Hapus Semua Voucher</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- Variabel Global ---
+    const ADMIN_PASS = "sifi77";
+    
+    // --- Local Storage Keys ---
+    const VOUCHER_KEY = 'cbtVouchers';
+    const LINK_KEY = 'cbtExamLink';
+
+    // --- Fungsi Helper ---
+
+    /** Mendapatkan data voucher dari Local Storage */
+    function getVouchers() {
+        const vouchers = localStorage.getItem(VOUCHER_KEY);
+        return vouchers ? JSON.parse(vouchers) : {};
+    }
+
+    /** Menyimpan data voucher ke Local Storage */
+    function saveVouchers(vouchers) {
+        localStorage.setItem(VOUCHER_KEY, JSON.stringify(vouchers));
+    }
+
+    /** Mendapatkan link ujian dari Local Storage */
+    function getExamLink() {
+        return localStorage.getItem(LINK_KEY) || 'Link Ujian Belum Ditetapkan';
+    }
+
+    /** Mengupdate tampilan link ujian saat ini */
+    function updateCurrentExamLinkDisplay() {
+        document.getElementById('currentExamLink').textContent = getExamLink();
+    }
+
+    // --- Fungsi Tampilan / Tab ---
+
+    document.getElementById('showUserTab').addEventListener('click', () => {
+        document.getElementById('userTab').style.display = 'block';
+        document.getElementById('adminTab').style.display = 'none';
+        document.getElementById('showUserTab').classList.add('active');
+        document.getElementById('showAdminTab').classList.remove('active');
+        document.getElementById('adminMenu').style.display = 'none'; // Sembunyikan menu admin jika kembali ke tab user
+        document.getElementById('adminPassword').value = '';
+        document.getElementById('adminMessage').textContent = '';
+    });
+
+    document.getElementById('showAdminTab').addEventListener('click', () => {
+        document.getElementById('userTab').style.display = 'none';
+        document.getElementById('adminTab').style.display = 'block';
+        document.getElementById('showUserTab').classList.remove('active');
+        document.getElementById('showAdminTab').classList.add('active');
+    });
+
+    // --- Fungsi Admin ---
+
+    /** Proses Login Admin */
+    function adminLogin() {
+        const password = document.getElementById('adminPassword').value;
+        const message = document.getElementById('adminMessage');
+        const adminMenu = document.getElementById('adminMenu');
+
+        if (password === ADMIN_PASS) {
+            message.textContent = 'Login Berhasil!';
+            message.style.color = 'green';
+            adminMenu.style.display = 'block';
+            document.getElementById('adminPassword').style.display = 'none';
+            document.querySelector('#adminTab button').style.display = 'none';
+            document.getElementById('examLink').value = getExamLink() === 'Link Ujian Belum Ditetapkan' ? '' : getExamLink();
+            updateCurrentExamLinkDisplay();
+            renderVoucherList();
+        } else {
+            message.textContent = 'Password salah!';
+            message.style.color = 'red';
+            adminMenu.style.display = 'none';
+            document.getElementById('adminPassword').style.display = 'block';
+            document.querySelector('#adminTab button').style.display = 'block';
+        }
+    }
+
+    /** Menyimpan Link Ujian */
+    function saveExamLink() {
+        const link = document.getElementById('examLink').value.trim();
+        if (link) {
+            localStorage.setItem(LINK_KEY, link);
+            alert('Link Ujian berhasil disimpan!');
+        } else {
+            localStorage.removeItem(LINK_KEY);
+            alert('Link Ujian dihapus/dikosongkan.');
+        }
+        updateCurrentExamLinkDisplay();
+    }
+
+    /** Membuat string acak untuk voucher */
+    function generateRandomCode(length = 8) {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let result = '';
+        for (let i = 0; i < length; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+    }
+
+    /** Generate dan Simpan Voucher */
+    function generateVouchers() {
+        const countInput = document.getElementById('voucherCount');
+        const count = parseInt(countInput.value);
+        
+        if (isNaN(count) || count < 1) {
+            alert("Masukkan jumlah voucher yang valid (minimal 1).");
+            return;
+        }
+
+        let vouchers = getVouchers();
+        let newVouchersArray = [];
+        
+        for (let i = 0; i < count; i++) {
+            let newCode;
+            do {
+                newCode = generateRandomCode();
+            } while (vouchers[newCode]); // Pastikan kode unik
+
+            vouchers[newCode] = { used: false, email: null, generated: new Date().toLocaleString() };
+            newVouchersArray.push(newCode);
+        }
+
+        saveVouchers(vouchers);
+        countInput.value = ''; // Kosongkan input
+        document.getElementById('generatedVouchers').value = newVouchersArray.join('\n');
+        renderVoucherList();
+        alert(`${count} Voucher berhasil dibuat!`);
+    }
+
+    /** Menampilkan daftar voucher di menu admin */
+    function renderVoucherList() {
+        const vouchers = getVouchers();
+        const container = document.getElementById('voucherListContainer');
+        container.innerHTML = '';
+        const voucherKeys = Object.keys(vouchers).sort();
+
+        if (voucherKeys.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: #777;">Belum ada voucher yang dibuat.</p>';
+            return;
+        }
+
+        voucherKeys.forEach(code => {
+            const voucher = vouchers[code];
+            const item = document.createElement('div');
+            item.classList.add('voucher-item');
+            
+            let statusText = voucher.used ? `(Dipakai oleh: ${voucher.email})` : '(Tersedia)';
+            let statusColor = voucher.used ? 'color: #d9534f;' : 'color: #5cb85c;';
+
+            item.innerHTML = `
+                <span style="font-weight: bold;">${code}</span>
+                <span style="font-size: 0.9em; ${statusColor}">${statusText}</span>
+                <button class="delete-btn" onclick="deleteVoucher('${code}')">Hapus</button>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    /** Hapus satu voucher */
+    function deleteVoucher(code) {
+        if (confirm(`Anda yakin ingin menghapus voucher ${code}?`)) {
+            let vouchers = getVouchers();
+            delete vouchers[code];
+            saveVouchers(vouchers);
+            renderVoucherList();
+            alert(`Voucher ${code} berhasil dihapus.`);
+        }
+    }
+
+    /** Hapus semua voucher */
+    function clearAllVouchers() {
+        if (confirm("ANDA YAKIN INGIN MENGHAPUS SEMUA VOUCHER? Tindakan ini tidak dapat dibatalkan.")) {
+            localStorage.removeItem(VOUCHER_KEY);
+            renderVoucherList();
+            alert("Semua voucher telah dihapus.");
+        }
+    }
+
+    // --- Fungsi Peserta ---
+
+    /** Proses Mulai Ujian */
+    function startExam() {
+        const emailInput = document.getElementById('userEmail');
+        const voucherInput = document.getElementById('userVoucher');
+        const message = document.getElementById('userMessage');
+        const email = emailInput.value.trim();
+        const voucherCode = voucherInput.value.trim().toUpperCase();
+        const examLink = getExamLink();
+        let vouchers = getVouchers();
+
+        message.textContent = ''; // Reset pesan
+
+        if (!email || !voucherCode) {
+            message.textContent = 'Email dan Voucher harus diisi.';
+            return;
+        }
+
+        if (examLink === 'Link Ujian Belum Ditetapkan') {
+            message.textContent = 'Error: Link Ujian belum diatur oleh Admin.';
+            return;
+        }
+
+        if (!vouchers[voucherCode]) {
+            message.textContent = 'Voucher tidak valid atau tidak ditemukan.';
+            return;
+        }
+
+        if (vouchers[voucherCode].used) {
+            message.textContent = `Voucher sudah digunakan oleh ${vouchers[voucherCode].email}.`;
+            return;
+        }
+
+        // Voucher Valid, Tandai sebagai Terpakai dan Mulai Ujian
+        vouchers[voucherCode].used = true;
+        vouchers[voucherCode].email = email;
+        saveVouchers(vouchers);
+
+        // Arahkan ke link ujian
+        message.textContent = 'Voucher valid! Mengarahkan ke halaman ujian...';
+        message.style.color = 'green';
+        
+        // Timeout 1 detik sebelum redirect agar pesan terlihat
+        setTimeout(() => {
+            window.open(examLink, '_blank'); 
+            // Opsional: reset form setelah berhasil
+            emailInput.value = '';
+            voucherInput.value = '';
+            message.textContent = 'Silakan ikuti ujian di tab baru.';
+        }, 1000);
+    }
+
+    // --- Inisialisasi Saat Halaman Dimuat ---
+    window.onload = function() {
+        // Hanya untuk tampilan awal, pastikan link ujian sudah muncul jika ada
+        updateCurrentExamLinkDisplay();
+    };
+
+</script>
+
+</body>
+</html>
