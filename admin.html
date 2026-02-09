@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADMIN PANEL - CBT SMAN 1 LEMBOR SELATAN</title>
+    <style>
+        :root {
+            --primary: #0d47a1;
+            --danger: #d32f2f;
+            --success: #2e7d32;
+            --warning: #ffa000;
+        }
+
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #f0f2f5; margin: 0; padding: 20px; 
+        }
+
+        .header {
+            background: white; padding: 20px; border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px;
+            display: flex; justify-content: space-between; align-items: center;
+            flex-wrap: wrap; gap: 15px;
+        }
+
+        h1 { margin: 0; color: var(--primary); font-size: 1.5rem; }
+
+        .stats-container { display: flex; gap: 15px; }
+        .stat-box { 
+            background: white; padding: 10px 20px; border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center;
+        }
+
+        .controls {
+            background: white; padding: 15px; border-radius: 10px;
+            margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        input, select {
+            padding: 10px; border: 1px solid #ddd; border-radius: 5px; outline: none;
+        }
+
+        .refresh-btn {
+            background: var(--primary); color: white; border: none;
+            padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;
+        }
+
+        .refresh-btn:hover { opacity: 0.9; }
+
+        .table-container {
+            background: white; border-radius: 10px; overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th { background: var(--primary); color: white; padding: 15px; text-align: left; }
+        td { padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 0.9rem; }
+        
+        tr:hover { background-color: #f9f9f9; }
+
+        /* Label Warna Aktivitas */
+        .badge {
+            padding: 5px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; color: white;
+        }
+        .badge-login { background: var(--success); }
+        .badge-violation { background: var(--danger); }
+        .badge-exit { background: #555; }
+        .badge-device { background: #eceff1; color: #444; border: 1px solid #ccc; }
+
+        @media (max-width: 600px) {
+            .header { flex-direction: column; text-align: center; }
+            th:nth-child(3), td:nth-child(3) { display: none; } /* Sembunyikan kolom perangkat di HP */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>
+            <h1>Monitoring CBT Real-Time</h1>
+            <p style="margin: 5px 0 0; color: #666;">SMAN 1 LEMBOR SELATAN</p>
+        </div>
+        <div class="stats-container">
+            <div class="stat-box">
+                <small>Total Log</small><br>
+                <strong id="stat-total">0</strong>
+            </div>
+            <div class="stat-box" style="color: var(--danger);">
+                <small>Pelanggaran</small><br>
+                <strong id="stat-violation">0</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <input type="text" id="searchNama" placeholder="Cari nama siswa..." onkeyup="filterTabel()">
+        <select id="filterTipe" onchange="filterTabel()">
+            <option value="">Semua Aktivitas</option>
+            <option value="PELANGGARAN">Hanya Pelanggaran</option>
+            <option value="MULAI">Hanya Login</option>
+            <option value="KELUAR">Hanya Keluar</option>
+        </select>
+        <button class="refresh-btn" onclick="muatData()">🔄 Refresh Data</button>
+        <span id="update-status" style="margin-left: auto; align-self: center; font-size: 0.8rem; color: #888;"></span>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Waktu</th>
+                    <th>Nama Siswa</th>
+                    <th>Perangkat</th>
+                    <th>Aktivitas/Status</th>
+                </tr>
+            </thead>
+            <tbody id="isi-tabel">
+                <tr>
+                    <td colspan="4" style="text-align:center; padding: 40px; color: #888;">Memuat data... Pastikan URL Script sudah benar.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // --- MASUKKAN URL GOOGLE WEB APP ANDA DI SINI ---
+        const scriptURL = https://script.google.com/macros/s/AKfycbys1eH6Dwvf_WOtHLgg0JkEbolB7Xdtg7otIbdvCVBcEsdzs1YeHyLF3g6Rfz7UuYG_/exec;
+
+        async function muatData() {
+            document.getElementById('update-status').innerText = "Memperbarui...";
+            try {
+                const response = await fetch(scriptURL);
+                if (!response.ok) throw new Error("Gagal mengambil data");
+                
+                const data = await response.json();
+                renderTabel(data);
+                
+                const now = new Date().toLocaleTimeString();
+                document.getElementById('update-status').innerText = "Terakhir update: " + now;
+            } catch (error) {
+                console.error(error);
+                document.getElementById('update-status').innerText = "Koneksi Gagal!";
+            }
+        }
+
+        function renderTabel(data) {
+            const tbody = document.getElementById('isi-tabel');
+            const totalStat = document.getElementById('stat-total');
+            const violationStat = document.getElementById('stat-violation');
+            
+            let violationCount = 0;
+            tbody.innerHTML = '';
+
+            // Balik data agar yang terbaru di atas
+            data.reverse().forEach(row => {
+                const isViolation = row.aksi.toUpperCase().includes('PELANGGARAN') || row.aksi.toUpperCase().includes('KECURANGAN');
+                if (isViolation) violationCount++;
+
+                let badgeClass = 'badge-login';
+                if (isViolation) badgeClass = 'badge-violation';
+                if (row.aksi.toUpperCase().includes('KELUAR')) badgeClass = 'badge-exit';
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td style="white-space: nowrap;">${row.waktu}</td>
+                        <td><strong>${row.nama}</strong></td>
+                        <td><span class="badge badge-device">${row.perangkat}</span></td>
+                        <td><span class="badge ${badgeClass}">${row.aksi}</span></td>
+                    </tr>
+                `;
+            });
+
+            totalStat.innerText = data.length;
+            violationStat.innerText = violationCount;
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Tidak ada data masuk.</td></tr>';
+            }
+        }
+
+        function filterTabel() {
+            const input = document.getElementById("searchNama").value.toUpperCase();
+            const filter = document.getElementById("filterTipe").value.toUpperCase();
+            const tr = document.getElementById("isi-tabel").getElementsByTagName("tr");
+
+            for (let i = 0; i < tr.length; i++) {
+                const tdNama = tr[i].getElementsByTagName("td")[1];
+                const tdAksi = tr[i].getElementsByTagName("td")[3];
+                if (tdNama && tdAksi) {
+                    const txtNama = tdNama.textContent || tdNama.innerText;
+                    const txtAksi = tdAksi.textContent || tdAksi.innerText;
+                    const matchNama = txtNama.toUpperCase().indexOf(input) > -1;
+                    const matchAksi = txtAksi.toUpperCase().indexOf(filter) > -1;
+                    tr[i].style.display = (matchNama && matchAksi) ? "" : "none";
+                }
+            }
+        }
+
+        // Jalankan refresh otomatis setiap 15 detik
+        setInterval(muatData, 15000);
+
+        // Muat pertama kali saat halaman dibuka
+        window.onload = muatData;
+    </script>
+</body>
+</html>

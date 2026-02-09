@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>CBT SMAN 1 LEMBOR SELATAN</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        :root {
+            --primary: #0d47a1;
+            --accent: #ffb300;
+            --danger: #d32f2f;
+            --bg: #eceff1;
+            --dark: #1a1a1a;
+        }
+
+        * { 
+            margin: 0; padding: 0; box-sizing: border-box; 
+            user-select: none; -webkit-tap-highlight-color: transparent; 
+        }
+
+        body, html {
+            height: 100%; width: 100%;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden; background-color: var(--bg);
+        }
+
+        /* LOGIN PANEL */
+        #login-panel {
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            padding: 20px;
+        }
+
+        .card {
+            background: white; padding: 25px; border-radius: 12px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3); text-align: center;
+            width: 100%; max-width: 400px; border-top: 6px solid var(--accent);
+        }
+
+        .school-name { font-weight: 800; color: var(--primary); font-size: 1.1rem; margin-bottom: 5px; }
+        
+        input[type="text"] {
+            width: 100%; padding: 12px; margin: 10px 0;
+            border: 2px solid #ddd; border-radius: 8px; font-size: 16px;
+        }
+
+        .btn {
+            width: 100%; padding: 12px; border: none; border-radius: 8px;
+            font-weight: bold; cursor: pointer; margin-bottom: 10px; transition: 0.2s;
+            font-size: 1rem;
+        }
+
+        .btn-start { background: var(--primary); color: white; }
+        .btn-scan { background: #455a64; color: white; display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+        /* SCANNER RESPONSIVE */
+        #reader { 
+            width: 100%; border-radius: 8px; margin-bottom: 15px; 
+            display: none; overflow: hidden; background: #000;
+        }
+        #reader video { object-fit: cover !important; }
+
+        /* EXAM PANEL */
+        #exam-panel { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: white; z-index: 9999; }
+        .floating-header {
+            position: absolute; top: 0; width: 100%; height: 50px;
+            background: var(--dark); display: flex; justify-content: space-between;
+            align-items: center; padding: 0 15px; color: white; z-index: 10001;
+        }
+        iframe { width: 100%; height: calc(100% - 50px); border: none; margin-top: 50px; }
+
+        /* WARNING OVERLAY */
+        #warning-overlay { 
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.98); color: white; z-index: 30000;
+            flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="login-panel">
+        <div class="card">
+            <div class="school-name">SMAN 1 LEMBOR SELATAN</div>
+            <h2 style="margin-bottom: 20px; color: #333;">CBT EXAM PRO</h2>
+            
+            <div id="reader"></div>
+            <button id="btn-open-scan" class="btn btn-scan" onclick="startScanner()">📷 SCAN QR SOAL</button>
+
+            <div id="manual-input">
+                <input type="text" id="studentName" placeholder="Nama Lengkap Siswa...">
+                <input type="text" id="examLink" placeholder="Link Soal (Otomatis jika Scan)">
+                <button class="btn btn-start" onclick="validateAndStart()">MASUK UJIAN</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="exam-panel">
+        <div class="floating-header">
+            <div style="font-weight: bold; font-size: 0.8rem;" id="display-name">SISWA</div>
+            <div style="background:var(--danger); padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 0.8rem;">
+                PELANGGARAN: <span id="violation-count">0</span>
+            </div>
+            <button style="background: #555; border: none; color: white; padding: 5px 10px; border-radius: 4px;" onclick="exitExam()">KELUAR</button>
+        </div>
+        <iframe id="examFrame" src="about:blank" allow="autoplay; camera"></iframe>
+    </div>
+
+    <div id="warning-overlay">
+        <h1 style="font-size: 5rem;">⚠️</h1>
+        <h2 style="color: var(--danger);">KECURANGAN TERDETEKSI</h2>
+        <p id="warning-text" style="margin: 15px 0;">Sistem mendeteksi aktivitas mencurigakan!</p>
+        <button class="btn btn-start" style="width: 250px;" onclick="resumeFullscreen()">SAYA MENGERTI</button>
+    </div>
+
+    <audio id="alarmSound" loop><source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg"></audio>
+
+    <script>
+        // --- KONFIGURASI ---
+        const scriptURL = https://script.google.com/macros/s/AKfycbys1eH6Dwvf_WOtHLgg0JkEbolB7Xdtg7otIbdvCVBcEsdzs1YeHyLF3g6Rfz7UuYG_/exec;
+        let html5QrCode;
+        let violations = 0;
+        let isExamActive = false;
+
+        // --- SISTEM DATA (GOOGLE SHEETS & DEVICE) ---
+        function getDeviceInfo() {
+            const ua = navigator.userAgent;
+            let device = "Unknown Device";
+            if (/android/i.test(ua)) device = "Android Phone";
+            else if (/iPad|iPhone|iPod/.test(ua)) device = "iOS Device";
+            else if (/Windows/i.test(ua)) device = "Windows PC";
+            return `${device} (${navigator.platform})`;
+        }
+
+        function saveLog(type) {
+            const name = document.getElementById('studentName').value || "Anonim";
+            const time = new Date().toLocaleString('id-ID');
+            const device = getDeviceInfo();
+
+            // Kirim ke Google Sheets
+            fetch(scriptURL, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({ name, type, time, device }),
+                headers: { 'Content-Type': 'application/json' }
+            }).catch(err => console.log("Offline/Error log"));
+        }
+
+        // --- SISTEM SCANNER ---
+        function startScanner() {
+            document.getElementById('reader').style.display = 'block';
+            document.getElementById('btn-open-scan').style.display = 'none';
+            html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start(
+                { facingMode: "environment" }, 
+                { fps: 15, qrbox: 250 },
+                (text) => {
+                    document.getElementById('examLink').value = text;
+                    if (navigator.vibrate) navigator.vibrate(100);
+                    stopScanner();
+                }
+            ).catch(() => { alert("Izin kamera ditolak"); stopScanner(); });
+        }
+
+        function stopScanner() {
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('reader').style.display = 'none';
+                    document.getElementById('btn-open-scan').style.display = 'flex';
+                });
+            }
+        }
+
+        // --- SISTEM CORE ---
+        function validateAndStart() {
+            const name = document.getElementById('studentName').value.trim();
+            let url = document.getElementById('examLink').value.trim();
+            
+            if (!name || !url) return alert("Isi Nama dan Scan Soal!");
+            
+            if (!url.startsWith('http')) url = 'https://' + url;
+            if (url.includes('docs.google.com/forms') && !url.includes('embedded=true')) {
+                url += (url.includes('?') ? '&' : '?') + 'embedded=true';
+            }
+
+            document.getElementById('display-name').innerText = name.toUpperCase();
+            document.getElementById('examFrame').src = url;
+            isExamActive = true;
+            
+            document.getElementById('login-panel').style.display = 'none';
+            document.getElementById('exam-panel').style.display = 'block';
+            
+            saveLog("MULAI UJIAN");
+            enterFS();
+        }
+
+        function enterFS() {
+            const el = document.documentElement;
+            if (el.requestFullscreen) el.requestFullscreen();
+            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        }
+
+        function resumeFullscreen() {
+            enterFS();
+            document.getElementById('warning-overlay').style.display = 'none';
+            document.getElementById('alarmSound').pause();
+        }
+
+        function logViolation(msg) {
+            if (!isExamActive) return;
+            violations++;
+            document.getElementById('violation-count').innerText = violations;
+            
+            saveLog("PELANGGARAN: " + msg);
+            
+            document.getElementById('warning-text').innerText = msg;
+            document.getElementById('warning-overlay').style.display = 'flex';
+            document.getElementById('alarmSound').play().catch(() => {});
+        }
+
+        function exitExam() {
+            if (confirm("Selesai ujian? Data Anda akan tersimpan.")) {
+                saveLog("KELUAR/SELESAI");
+                location.reload();
+            }
+        }
+
+        // --- KEAMANAN ---
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement && isExamActive) logViolation("Keluar dari Fullscreen");
+        });
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isExamActive) logViolation("Pindah Tab/Aplikasi");
+        });
+        window.addEventListener('contextmenu', e => e.preventDefault());
+        
+        // Deteksi Split Screen (Resize Berlebihan)
+        window.addEventListener('resize', () => {
+            if (isExamActive && window.innerHeight < (screen.height * 0.5)) {
+                logViolation("Deteksi Layar Terbagi (Split Screen)");
+            }
+        });
+    </script>
+</body>
+</html>
